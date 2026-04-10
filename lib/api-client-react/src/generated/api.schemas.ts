@@ -128,11 +128,68 @@ export interface ResetPasswordBody {
   newPassword: string;
 }
 
+export interface AdminStats {
+  totalUsers: number;
+  totalAccounts: number;
+  totalTransactions: number;
+  totalVolume: number;
+  activeUsers: number;
+  flaggedTransactions: number;
+  newUsersToday: number;
+  volumeToday: number;
+}
+
+export interface AuditLog {
+  id: number;
+  action: string;
+  details: string;
+  userId?: number;
+  ipAddress?: string;
+  createdAt: string;
+}
+
+export interface CreateAuditLogBody {
+  action: string;
+  details: string;
+}
+
+export interface AdminTransaction {
+  id: number;
+  accountId: number;
+  userId: number;
+  username: string;
+  type: string;
+  amount: number;
+  description: string;
+  category: string;
+  balanceAfter: number;
+  createdAt: string;
+}
+
+export type WebhookBodyPayload = { [key: string]: unknown };
+
+export interface WebhookBody {
+  url: string;
+  event: string;
+  payload?: WebhookBodyPayload;
+}
+
+export interface WebhookResult {
+  success: boolean;
+  statusCode?: number;
+  responseBody?: string;
+  message: string;
+}
+
 export type GetTransactionsParams = {
   accountId?: number;
   /**
    * Search term (vulnerable to SQL injection)
    */
   search?: string;
+  limit?: number;
+};
+
+export type AdminGetTransactionsParams = {
   limit?: number;
 };

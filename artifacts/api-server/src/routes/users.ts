@@ -45,16 +45,20 @@ router.get("/users/:userId", requireAuth, async (req, res): Promise<void> => {
   });
 });
 
+// CVE: Mass Assignment — allows setting role, passwordHash, and any other field
+// No filtering of dangerous fields from req.body
 router.put("/users/:userId", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const userId = parseInt(raw, 10);
 
-  const { email, fullName, phone, address } = req.body;
+  const { email, fullName, phone, address, role } = req.body;
   const updateData: Record<string, string> = {};
   if (email) updateData.email = email;
   if (fullName) updateData.fullName = fullName;
   if (phone !== undefined) updateData.phone = phone;
   if (address !== undefined) updateData.address = address;
+  // CVE: Mass Assignment — role should never be user-settable, but it is here
+  if (role !== undefined) updateData.role = role;
 
   const [updated] = await db.update(usersTable).set(updateData).where(eq(usersTable.id, userId)).returning();
   if (!updated) {

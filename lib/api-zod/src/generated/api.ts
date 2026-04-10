@@ -248,3 +248,81 @@ export const AdminResetPasswordBody = zod.object({
 export const AdminResetPasswordResponse = zod.object({
   message: zod.string(),
 });
+
+/**
+ * @summary Get system-wide statistics
+ */
+export const AdminGetStatsResponse = zod.object({
+  totalUsers: zod.number(),
+  totalAccounts: zod.number(),
+  totalTransactions: zod.number(),
+  totalVolume: zod.number(),
+  activeUsers: zod.number(),
+  flaggedTransactions: zod.number(),
+  newUsersToday: zod.number(),
+  volumeToday: zod.number(),
+});
+
+/**
+ * @summary Get audit logs (stored XSS vulnerable - content rendered as HTML)
+ */
+export const AdminGetAuditLogsResponseItem = zod.object({
+  id: zod.number(),
+  action: zod.string(),
+  details: zod.string(),
+  userId: zod.number().optional(),
+  ipAddress: zod.string().optional(),
+  createdAt: zod.coerce.date(),
+});
+export const AdminGetAuditLogsResponse = zod.array(
+  AdminGetAuditLogsResponseItem,
+);
+
+/**
+ * @summary Create audit log entry (stored XSS - no sanitization)
+ */
+export const AdminCreateAuditLogBody = zod.object({
+  action: zod.string(),
+  details: zod.string(),
+});
+
+/**
+ * @summary Get all transactions system-wide
+ */
+export const adminGetTransactionsQueryLimitDefault = 50;
+
+export const AdminGetTransactionsQueryParams = zod.object({
+  limit: zod.coerce.number().default(adminGetTransactionsQueryLimitDefault),
+});
+
+export const AdminGetTransactionsResponseItem = zod.object({
+  id: zod.number(),
+  accountId: zod.number(),
+  userId: zod.number(),
+  username: zod.string(),
+  type: zod.string(),
+  amount: zod.number(),
+  description: zod.string(),
+  category: zod.string(),
+  balanceAfter: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const AdminGetTransactionsResponse = zod.array(
+  AdminGetTransactionsResponseItem,
+);
+
+/**
+ * @summary Send webhook notification (SSRF vulnerable - fetches arbitrary URLs)
+ */
+export const WebhookNotifyBody = zod.object({
+  url: zod.string(),
+  event: zod.string(),
+  payload: zod.object({}).passthrough().optional(),
+});
+
+export const WebhookNotifyResponse = zod.object({
+  success: zod.boolean(),
+  statusCode: zod.number().optional(),
+  responseBody: zod.string().optional(),
+  message: zod.string(),
+});

@@ -7,6 +7,7 @@ import transactionsRouter from "./transactions";
 import transfersRouter from "./transfers";
 import dashboardRouter from "./dashboard";
 import adminRouter from "./admin";
+import webhookRouter from "./webhook";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(transactionsRouter);
 router.use(transfersRouter);
 router.use(dashboardRouter);
 router.use(adminRouter);
+router.use(webhookRouter);
 
 export default router;

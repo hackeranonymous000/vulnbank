@@ -8,6 +8,11 @@
 
 export * from "./account";
 export * from "./accountAccountType";
+export * from "./adminGetTransactionsParams";
+export * from "./adminStats";
+export * from "./adminTransaction";
+export * from "./auditLog";
+export * from "./createAuditLogBody";
 export * from "./dashboardSummary";
 export * from "./dashboardSummaryAccountBreakdownItem";
 export * from "./errorResponse";
@@ -25,3 +30,6 @@ export * from "./transferResult";
 export * from "./updateUserBody";
 export * from "./user";
 export * from "./userRole";
+export * from "./webhookBody";
+export * from "./webhookBodyPayload";
+export * from "./webhookResult";

@@ -18,6 +18,11 @@ import type {
 
 import type {
   Account,
+  AdminGetTransactionsParams,
+  AdminStats,
+  AdminTransaction,
+  AuditLog,
+  CreateAuditLogBody,
   DashboardSummary,
   ErrorResponse,
   GetTransactionsParams,
@@ -32,6 +37,8 @@ import type {
   TransferResult,
   UpdateUserBody,
   User,
+  WebhookBody,
+  WebhookResult,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -1334,4 +1341,426 @@ export const useAdminResetPassword = <
   TContext
 > => {
   return useMutation(getAdminResetPasswordMutationOptions(options));
+};
+
+/**
+ * @summary Get system-wide statistics
+ */
+export const getAdminGetStatsUrl = () => {
+  return `/api/admin/stats`;
+};
+
+export const adminGetStats = async (
+  options?: RequestInit,
+): Promise<AdminStats> => {
+  return customFetch<AdminStats>(getAdminGetStatsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminGetStatsQueryKey = () => {
+  return [`/api/admin/stats`] as const;
+};
+
+export const getAdminGetStatsQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminGetStats>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getAdminGetStatsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetStats>>> = ({
+    signal,
+  }) => adminGetStats({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetStats>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminGetStatsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminGetStats>>
+>;
+export type AdminGetStatsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get system-wide statistics
+ */
+
+export function useAdminGetStats<
+  TData = Awaited<ReturnType<typeof adminGetStats>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminGetStatsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get audit logs (stored XSS vulnerable - content rendered as HTML)
+ */
+export const getAdminGetAuditLogsUrl = () => {
+  return `/api/admin/audit-logs`;
+};
+
+export const adminGetAuditLogs = async (
+  options?: RequestInit,
+): Promise<AuditLog[]> => {
+  return customFetch<AuditLog[]>(getAdminGetAuditLogsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminGetAuditLogsQueryKey = () => {
+  return [`/api/admin/audit-logs`] as const;
+};
+
+export const getAdminGetAuditLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminGetAuditLogs>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetAuditLogs>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getAdminGetAuditLogsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminGetAuditLogs>>
+  > = ({ signal }) => adminGetAuditLogs({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetAuditLogs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminGetAuditLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminGetAuditLogs>>
+>;
+export type AdminGetAuditLogsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get audit logs (stored XSS vulnerable - content rendered as HTML)
+ */
+
+export function useAdminGetAuditLogs<
+  TData = Awaited<ReturnType<typeof adminGetAuditLogs>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetAuditLogs>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminGetAuditLogsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create audit log entry (stored XSS - no sanitization)
+ */
+export const getAdminCreateAuditLogUrl = () => {
+  return `/api/admin/audit-logs`;
+};
+
+export const adminCreateAuditLog = async (
+  createAuditLogBody: CreateAuditLogBody,
+  options?: RequestInit,
+): Promise<AuditLog> => {
+  return customFetch<AuditLog>(getAdminCreateAuditLogUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createAuditLogBody),
+  });
+};
+
+export const getAdminCreateAuditLogMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminCreateAuditLog>>,
+    TError,
+    { data: BodyType<CreateAuditLogBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminCreateAuditLog>>,
+  TError,
+  { data: BodyType<CreateAuditLogBody> },
+  TContext
+> => {
+  const mutationKey = ["adminCreateAuditLog"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminCreateAuditLog>>,
+    { data: BodyType<CreateAuditLogBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return adminCreateAuditLog(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminCreateAuditLogMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminCreateAuditLog>>
+>;
+export type AdminCreateAuditLogMutationBody = BodyType<CreateAuditLogBody>;
+export type AdminCreateAuditLogMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create audit log entry (stored XSS - no sanitization)
+ */
+export const useAdminCreateAuditLog = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminCreateAuditLog>>,
+    TError,
+    { data: BodyType<CreateAuditLogBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminCreateAuditLog>>,
+  TError,
+  { data: BodyType<CreateAuditLogBody> },
+  TContext
+> => {
+  return useMutation(getAdminCreateAuditLogMutationOptions(options));
+};
+
+/**
+ * @summary Get all transactions system-wide
+ */
+export const getAdminGetTransactionsUrl = (
+  params?: AdminGetTransactionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/transactions?${stringifiedParams}`
+    : `/api/admin/transactions`;
+};
+
+export const adminGetTransactions = async (
+  params?: AdminGetTransactionsParams,
+  options?: RequestInit,
+): Promise<AdminTransaction[]> => {
+  return customFetch<AdminTransaction[]>(getAdminGetTransactionsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminGetTransactionsQueryKey = (
+  params?: AdminGetTransactionsParams,
+) => {
+  return [`/api/admin/transactions`, ...(params ? [params] : [])] as const;
+};
+
+export const getAdminGetTransactionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminGetTransactions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: AdminGetTransactionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminGetTransactions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminGetTransactionsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminGetTransactions>>
+  > = ({ signal }) =>
+    adminGetTransactions(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetTransactions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminGetTransactionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminGetTransactions>>
+>;
+export type AdminGetTransactionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all transactions system-wide
+ */
+
+export function useAdminGetTransactions<
+  TData = Awaited<ReturnType<typeof adminGetTransactions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: AdminGetTransactionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminGetTransactions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminGetTransactionsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Send webhook notification (SSRF vulnerable - fetches arbitrary URLs)
+ */
+export const getWebhookNotifyUrl = () => {
+  return `/api/webhook/notify`;
+};
+
+export const webhookNotify = async (
+  webhookBody: WebhookBody,
+  options?: RequestInit,
+): Promise<WebhookResult> => {
+  return customFetch<WebhookResult>(getWebhookNotifyUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(webhookBody),
+  });
+};
+
+export const getWebhookNotifyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof webhookNotify>>,
+    TError,
+    { data: BodyType<WebhookBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof webhookNotify>>,
+  TError,
+  { data: BodyType<WebhookBody> },
+  TContext
+> => {
+  const mutationKey = ["webhookNotify"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof webhookNotify>>,
+    { data: BodyType<WebhookBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return webhookNotify(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WebhookNotifyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof webhookNotify>>
+>;
+export type WebhookNotifyMutationBody = BodyType<WebhookBody>;
+export type WebhookNotifyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Send webhook notification (SSRF vulnerable - fetches arbitrary URLs)
+ */
+export const useWebhookNotify = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof webhookNotify>>,
+    TError,
+    { data: BodyType<WebhookBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof webhookNotify>>,
+  TError,
+  { data: BodyType<WebhookBody> },
+  TContext
+> => {
+  return useMutation(getWebhookNotifyMutationOptions(options));
 };

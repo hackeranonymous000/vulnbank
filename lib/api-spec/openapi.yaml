@@ -316,6 +316,91 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
 
+  /admin/stats:
+    get:
+      operationId: adminGetStats
+      tags: [admin]
+      summary: Get system-wide statistics
+      responses:
+        "200":
+          description: System stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
+  /admin/audit-logs:
+    get:
+      operationId: adminGetAuditLogs
+      tags: [admin]
+      summary: Get audit logs (stored XSS vulnerable - content rendered as HTML)
+      responses:
+        "200":
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+    post:
+      operationId: adminCreateAuditLog
+      tags: [admin]
+      summary: Create audit log entry (stored XSS - no sanitization)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAuditLogBody"
+      responses:
+        "201":
+          description: Audit log created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLog"
+
+  /admin/transactions:
+    get:
+      operationId: adminGetTransactions
+      tags: [admin]
+      summary: Get all transactions system-wide
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: All transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminTransaction"
+
+  /webhook/notify:
+    post:
+      operationId: webhookNotify
+      tags: [admin]
+      summary: Send webhook notification (SSRF vulnerable - fetches arbitrary URLs)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookBody"
+      responses:
+        "200":
+          description: Webhook result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResult"
+
 components:
   schemas:
     HealthStatus:
@@ -549,3 +634,129 @@ components:
           type: string
       required:
         - newPassword
+
+    AdminStats:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        totalAccounts:
+          type: integer
+        totalTransactions:
+          type: integer
+        totalVolume:
+          type: number
+        activeUsers:
+          type: integer
+        flaggedTransactions:
+          type: integer
+        newUsersToday:
+          type: integer
+        volumeToday:
+          type: number
+      required:
+        - totalUsers
+        - totalAccounts
+        - totalTransactions
+        - totalVolume
+        - activeUsers
+        - flaggedTransactions
+        - newUsersToday
+        - volumeToday
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+        details:
+          type: string
+        userId:
+          type: integer
+        ipAddress:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - action
+        - details
+        - createdAt
+
+    CreateAuditLogBody:
+      type: object
+      properties:
+        action:
+          type: string
+        details:
+          type: string
+      required:
+        - action
+        - details
+
+    AdminTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        accountId:
+          type: integer
+        userId:
+          type: integer
+        username:
+          type: string
+        type:
+          type: string
+        amount:
+          type: number
+        description:
+          type: string
+        category:
+          type: string
+        balanceAfter:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - accountId
+        - userId
+        - username
+        - type
+        - amount
+        - description
+        - category
+        - balanceAfter
+        - createdAt
+
+    WebhookBody:
+      type: object
+      properties:
+        url:
+          type: string
+        event:
+          type: string
+        payload:
+          type: object
+      required:
+        - url
+        - event
+
+    WebhookResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        statusCode:
+          type: integer
+        responseBody:
+          type: string
+        message:
+          type: string
+      required:
+        - success
+        - message
