@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo using TypeScript. Contains VulnBank — an intentionally vulnerable fintech web app for security testing and education.
 
 ## Stack
 
@@ -15,6 +15,41 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite + TailwindCSS + shadcn/ui
+
+## Artifacts
+
+### fintech-app (react-vite, previewPath: /)
+VulnBank — a fictional neobank app intentionally vulnerable for security testing. Dark navy/teal design.
+
+Pages:
+- `/` — Login page
+- `/register` — Registration
+- `/dashboard` — Dashboard with balance, accounts, recent transactions
+- `/accounts` — Account list
+- `/accounts/:accountId` — Account detail with transactions
+- `/transactions` — Full transaction list (SQL injection via search field)
+- `/transfer` — Transfer money between accounts
+- `/profile` — User profile (IDOR vulnerable)
+- `/profile/:userId` — View any user's profile by ID (IDOR)
+- `/admin` — Admin panel (broken access control — no role check)
+
+### api-server (Express API, previewPath: /api)
+Backend REST API serving all fintech endpoints.
+
+## Intentional Vulnerabilities (for testing)
+
+1. **SQL Injection** — `/api/transactions?search=` uses raw string interpolation
+2. **IDOR (Insecure Direct Object Reference)** — `/api/users/:userId` and `/api/accounts/:accountId` don't verify ownership
+3. **Broken Access Control** — `/api/admin/users` only checks authentication, not authorization (role)
+4. **Weak Token** — JWT-style token signature verification is skipped (only payload is decoded)
+5. **Weak Password Hashing** — SHA-256 without salt instead of bcrypt
+
+## Test Credentials
+
+- `alice` / `password123` — Regular user (userId: 1)
+- `bob` / `password123` — Regular user (userId: 2)
+- `admin` / `admin123` — Admin user (userId: 3)
 
 ## Key Commands
 
