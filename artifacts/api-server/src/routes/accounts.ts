@@ -1,32 +1,47 @@
 import { Router, type IRouter } from "express";
-import { db, accountsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { query, queryOne, run } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
+import { accountRow } from "../lib/serialize";
 
 const router: IRouter = Router();
 
-router.get("/accounts", requireAuth, async (req, res): Promise<void> => {
-  const accounts = await db.select().from(accountsTable).where(eq(accountsTable.userId, req.userId!));
-  res.json(accounts.map(a => ({
-    ...a,
-    balance: parseFloat(a.balance as unknown as string),
-  })));
+const ACCOUNT_COLUMNS =
+  "id, user_id, account_number, account_type, balance, currency, created_at";
+
+router.get("/", requireAuth, async (req, res): Promise<void> => {
+  const rows = query(
+    `SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE user_id = ? ORDER BY id`,
+    [req.userId!],
+  );
+  res.json(rows.map(accountRow));
 });
 
-router.get("/accounts/:accountId", requireAuth, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.accountId) ? req.params.accountId[0] : req.params.accountId;
-  const accountId = parseInt(raw, 10);
-
-  const [account] = await db.select().from(accountsTable).where(eq(accountsTable.id, accountId));
+router.get("/:id", requireAuth, async (req, res): Promise<void> => {
+  const account = queryOne(
+    `SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE id = ?`,
+    [Number(req.params.id)],
+  );
   if (!account) {
     res.status(404).json({ error: "Account not found" });
     return;
   }
+  res.json(accountRow(account));
+});
 
-  res.json({
-    ...account,
-    balance: parseFloat(account.balance as unknown as string),
-  });
+router.put("/:id", requireAuth, async (req, res): Promise<void> => {
+  const accountId = Number(req.params.id);
+  const { balance } = (req.body ?? {}) as { balance?: unknown };
+  if (balance === undefined) {
+    res.status(400).json({ error: "balance is required" });
+    return;
+  }
+  run("UPDATE accounts SET balance = ? WHERE id = ?", [Number(balance), accountId]);
+  const account = queryOne(`SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE id = ?`, [accountId]);
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  res.json(accountRow(account));
 });
 
 export default router;

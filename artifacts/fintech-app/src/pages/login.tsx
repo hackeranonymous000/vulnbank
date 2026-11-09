@@ -1,178 +1,185 @@
 import { useState } from "react";
-import { useLocation, Link } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { ShieldAlert, ArrowRight, Loader2, Terminal, ChevronDown, ChevronUp } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useLogin } from "@workspace/api-client-react";
+import { Link, useLocation } from "wouter";
+import { toast } from "sonner";
+import { ArrowRight, Lock, ShieldCheck, Sparkles } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
-
-const loginSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
-});
-
-type LoginFormValues = z.infer<typeof loginSchema>;
-
-const TEST_ACCOUNTS = [
-  { username: "alice", password: "password123", role: "User", desc: "3 accounts, transactions" },
-  { username: "bob", password: "password123", role: "User", desc: "2 accounts" },
-  { username: "admin", password: "admin123", role: "Admin", desc: "Full admin access" },
-];
+import { Button, Field, inputClass } from "@/components/app-ui";
+import type { User } from "@/lib/types";
 
 export default function Login() {
-  const [_, setLocation] = useLocation();
-  const { login: setAuth } = useAuth();
-  const { toast } = useToast();
-  const loginMutation = useLogin();
-  const [showHints, setShowHints] = useState(true);
+  const [, setLocation] = useLocation();
+  const { login } = useAuth();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { username: "", password: "" },
-  });
-
-  const onSubmit = async (data: LoginFormValues) => {
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
     try {
-      const response = await loginMutation.mutateAsync({ data });
-      setAuth(response.user, response.token);
-      toast({ title: "Authentication successful", description: `Welcome back, ${response.user.fullName}.` });
+      const response = await api<{ token: string; user: User | null }>("/api/auth/login", {
+        method: "POST",
+        body: { username, password },
+      });
+      const account =
+        response.user ??
+        (await api<User>("/api/users/me", {
+          headers: { Authorization: `Bearer ${response.token}` },
+        }));
+      login(account, response.token);
+      toast.success(`Welcome back, ${(account.fullName || account.username || "there").split(" ")[0]}`);
       setLocation("/dashboard");
-    } catch (err: any) {
-      const msg = err?.data?.error || err?.message || "Invalid username or password.";
-      toast({ title: "Authentication failed", description: msg, variant: "destructive" });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Unable to reach the API";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const quickLogin = (username: string, password: string) => {
-    setValue("username", username);
-    setValue("password", password);
-  };
-
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Left side - Branding */}
-      <div className="hidden lg:flex flex-col justify-between w-1/2 bg-card border-r border-border p-12 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-background to-background" />
-        <div className="relative z-10 flex items-center gap-3 font-mono font-bold text-3xl tracking-tighter text-primary">
-          <ShieldAlert className="h-10 w-10" />
-          <span>VULNBANK</span>
-        </div>
-        <div className="relative z-10 max-w-md">
-          <h2 className="text-4xl font-semibold mb-6">Security-first digital banking for the modern professional.</h2>
-          <p className="text-lg text-muted-foreground">
-            Experience the future of finance with our zero-trust architecture and military-grade encryption.*
-          </p>
-          <p className="text-xs text-muted-foreground mt-8 opacity-50">
-            * Claims may not be factually accurate. Built for security testing and educational purposes only.
-          </p>
-        </div>
-      </div>
+    <div className="relative z-10 flex min-h-screen">
+      {/* Brand column */}
+      <section className="relative hidden w-[54%] flex-col justify-between overflow-hidden border-r border-white/[0.06] p-12 lg:flex">
+        <div className="pointer-events-none absolute inset-0 terminal-grid opacity-[0.16]" />
+        <div className="pointer-events-none absolute -left-32 top-24 h-[420px] w-[420px] animate-float rounded-full bg-mint/15 blur-[120px]" />
+        <div className="pointer-events-none absolute -right-24 bottom-10 h-[380px] w-[380px] animate-float rounded-full bg-violet/20 blur-[130px]" />
 
-      {/* Right side - Form */}
-      <div className="flex-1 flex flex-col justify-center px-8 sm:px-16 lg:px-24">
-        <div className="w-full max-w-sm mx-auto space-y-6">
-          <div className="lg:hidden flex items-center gap-2 font-mono font-bold text-2xl tracking-tighter text-primary mb-8">
-            <ShieldAlert className="h-8 w-8" />
-            <span>VULNBANK</span>
+        <div className="relative flex items-center gap-3">
+          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-mint to-emerald-600 text-[#04110d] shadow-[0_16px_40px_-18px_rgba(52,224,176,0.9)]">
+            <ShieldCheck className="h-6 w-6" strokeWidth={2.4} />
+          </span>
+          <div>
+            <p className="text-lg font-extrabold tracking-tight">VULNBANK</p>
+            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground">
+              PRIVATE BANKING
+            </p>
+          </div>
+        </div>
+
+        <div className="relative max-w-[520px]">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] font-medium text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-mint" />
+              Neobank · v2.0
+          </span>
+          <h1 className="mt-6 text-[46px] font-semibold leading-[1.05] tracking-[-0.03em]">
+            Banking that
+            <br />
+            <span className="gradient-text">moves with you.</span>
+          </h1>
+          <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+            Open an account in seconds, move money instantly, and keep every card and
+            transaction in one place.
+          </p>
+
+          <div className="mt-8 grid max-w-md grid-cols-3 gap-3">
+            {[
+              { value: "$0", label: "Monthly fee" },
+              { value: "24/7", label: "Instant transfer" },
+              { value: "100%", label: "Mobile ready" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+                <p className="num text-xl font-semibold text-mint">{item.value}</p>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  {item.label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative flex items-center justify-between text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <Lock className="h-3.5 w-3.5 text-mint" />
+            Sessions encrypted in transit
+          </span>
+          <span>
+            Developed by <span className="font-semibold text-mint/80">Alexis</span>
+          </span>
+        </div>
+      </section>
+
+      {/* Form column */}
+      <section className="flex w-full flex-col justify-center px-6 py-10 sm:px-12 lg:w-[46%] lg:px-16">
+        <div className="mx-auto w-full max-w-[390px]">
+          <div className="mb-9 flex items-center gap-3 lg:hidden">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-mint to-emerald-600 text-[#04110d]">
+              <ShieldCheck className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="font-extrabold tracking-tight">VULNBANK</p>
+              <p className="text-[10px] tracking-[0.16em] text-muted-foreground">PRIVATE BANKING</p>
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <h1 className="text-3xl font-semibold tracking-tight">Sign in</h1>
-            <p className="text-muted-foreground text-sm">Enter your credentials to access your account.</p>
+          <div className="mb-7">
+            <h2 className="text-[26px] font-semibold tracking-tight">Sign in</h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Welcome back. Enter your details to continue.
+            </p>
           </div>
 
-          {/* Test credentials hint */}
-          <div className="rounded-lg border border-primary/30 bg-primary/5 overflow-hidden">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
-              onClick={() => setShowHints(!showHints)}
-            >
-              <span className="flex items-center gap-2">
-                <Terminal className="h-4 w-4" />
-                Test credentials (click to autofill)
-              </span>
-              {showHints ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-            {showHints && (
-              <div className="border-t border-primary/20 divide-y divide-primary/10">
-                {TEST_ACCOUNTS.map(acc => (
-                  <button
-                    key={acc.username}
-                    type="button"
-                    onClick={() => quickLogin(acc.username, acc.password)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-primary/10 transition-colors"
-                  >
-                    <div>
-                      <span className="font-mono text-sm font-semibold text-foreground">{acc.username}</span>
-                      <span className="text-xs text-muted-foreground ml-2">/ {acc.password}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${acc.role === "Admin" ? "bg-destructive/20 text-destructive" : "bg-secondary text-secondary-foreground"}`}>
-                        {acc.role}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+          <form onSubmit={submit} className="space-y-4">
+            <Field label="Username" htmlFor="username">
+              <input
+                id="username"
+                data-testid="input-username"
+                className={inputClass}
+                placeholder="alice"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </Field>
+
+            <Field label="Password" htmlFor="password">
+              <input
+                id="password"
+                data-testid="input-password"
+                type="password"
+                className={inputClass}
+                placeholder="••••••••••"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+
+            {error && (
+              <div className="rounded-xl border border-rose/25 bg-rose/[0.08] px-3 py-2 text-xs text-rose">
+                {error}
               </div>
             )}
-          </div>
-
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  data-testid="input-username"
-                  placeholder="johndoe"
-                  className="h-11 bg-black/20"
-                  autoComplete="username"
-                  {...register("username")}
-                />
-                {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  data-testid="input-password"
-                  type="password"
-                  placeholder="••••••••"
-                  className="h-11 bg-black/20"
-                  autoComplete="current-password"
-                  {...register("password")}
-                />
-                {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
-              </div>
-            </div>
 
             <Button
               type="submit"
+              size="lg"
               data-testid="button-login"
-              className="w-full h-11 text-sm font-semibold"
-              disabled={loginMutation.isPending}
+              loading={loading}
+              className="w-full"
             >
-              {loginMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Sign in to VulnBank
-              {!loginMutation.isPending && <ArrowRight className="ml-2 h-4 w-4" />}
+              {!loading && <Lock className="h-4 w-4" />}
+              Sign in
+              {!loading && <ArrowRight className="h-4 w-4" />}
             </Button>
           </form>
 
-          <div className="text-center text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <Link href="/register" className="text-primary hover:underline underline-offset-4 font-medium">
-              Create an account
+          <p className="mt-6 text-center text-[13px] text-muted-foreground">
+            No account?{" "}
+            <Link href="/register" className="font-medium text-mint hover:underline underline-offset-4">
+              Create one instantly
             </Link>
-          </div>
+          </p>
+
+          <p className="mt-10 text-center text-[11px] text-muted-foreground/60 lg:hidden">
+            Developed by <span className="font-semibold">Alexis</span>
+          </p>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

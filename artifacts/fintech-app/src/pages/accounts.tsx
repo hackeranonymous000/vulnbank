@@ -1,81 +1,122 @@
-import { useGetAccounts } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRight, CreditCard, Building2, TrendingUp } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Landmark, PiggyBank, Plus, CreditCard } from "lucide-react";
+import { api, formatCurrency } from "@/lib/api";
+import { Badge, EmptyState, PageHeader, Panel, Skeleton } from "@/components/app-ui";
+import type { Account } from "@/lib/types";
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-}
-
-function AccountIcon({ type }: { type: string }) {
-  switch (type) {
-    case "checking":
-      return <CreditCard className="h-6 w-6 text-primary" />;
-    case "savings":
-      return <Building2 className="h-6 w-6 text-primary" />;
-    case "investment":
-      return <TrendingUp className="h-6 w-6 text-primary" />;
-    default:
-      return <CreditCard className="h-6 w-6 text-primary" />;
-  }
-}
+const STYLES: Record<string, { gradient: string; icon: typeof Landmark; label: string }> = {
+  checking: {
+    gradient: "from-[#0d2f27] via-[#0a1518] to-[#0a0e14]",
+    icon: Landmark,
+    label: "Everyday spending",
+  },
+  savings: {
+    gradient: "from-[#171a3a] via-[#0c1020] to-[#080b12]",
+    icon: PiggyBank,
+    label: "Reserved funds",
+  },
+  credit: {
+    gradient: "from-[#2c1024] via-[#150d16] to-[#080a0f]",
+    icon: CreditCard,
+    label: "Revolving credit",
+  },
+};
 
 export default function Accounts() {
-  const { data: accounts, isLoading } = useGetAccounts();
+  const { data, isLoading } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: () => api<Account[]>("/api/accounts"),
+  });
+
+  const accounts = data ?? [];
+  const total = accounts.reduce((sum, account) => sum + account.balance, 0);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Your Accounts</h2>
-        <p className="text-muted-foreground">Manage your balances and transaction history.</p>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Portfolio"
+        title="Accounts"
+        description="Every account on your profile with its live balance and routing details."
+        actions={
+          <Link
+            href="/transfer"
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-mint px-4 text-sm font-semibold text-[#04110d] transition-all hover:brightness-110"
+          >
+            <Plus className="h-4 w-4" />
+            Move money
+          </Link>
+        }
+      />
+
+      <Panel className="flex flex-wrap items-center justify-between gap-3" bodyClassName="p-4">
+        <div className="flex items-center gap-3">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-mint/10 text-mint">
+            <ArrowUpRight className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="label-xs">Combined balance</p>
+            <p className="num text-lg font-semibold">{formatCurrency(total)}</p>
+          </div>
+        </div>
+        <Badge tone="mint">USD</Badge>
+      </Panel>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3].map(i => (
-            <Card key={i}>
-              <CardHeader className="pb-2">
-                <Skeleton className="h-6 w-24 mb-2" />
-                <Skeleton className="h-4 w-32" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-10 w-40 mt-4" />
-              </CardContent>
-            </Card>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-48 w-full rounded-xl" />
           ))}
         </div>
+      ) : accounts.length === 0 ? (
+        <EmptyState title="No accounts yet" description="Register a new customer to open a starter account." />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {accounts?.map((account: any) => (
-            <Link key={account.id} href={`/accounts/${account.id}`}>
-              <Card className="hover:bg-card/90 hover:border-primary/50 transition-all cursor-pointer h-full flex flex-col group">
-                <CardHeader className="flex flex-row items-start justify-between pb-2">
-                  <div className="space-y-1">
-                    <CardTitle className="text-lg capitalize">{account.accountType} Account</CardTitle>
-                    <CardDescription className="font-mono">•••• {account.accountNumber.slice(-4)}</CardDescription>
-                  </div>
-                  <div className="p-2 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors">
-                    <AccountIcon type={account.accountType} />
-                  </div>
-                </CardHeader>
-                <CardContent className="mt-auto pt-6">
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <div className="text-sm text-muted-foreground mb-1">Available Balance</div>
-                      <div className="text-3xl font-bold">{formatCurrency(account.balance)}</div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {accounts.map((account) => {
+            const style = STYLES[account.accountType] ?? STYLES.checking!;
+            const Icon = style.icon;
+            return (
+              <Link key={account.id} href={`/accounts/${account.id}`}>
+                <article
+                  className={`card-sheen group relative flex h-[196px] flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-br ${style.gradient} p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-mint/30`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.05] text-mint">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <p className="text-[13px] font-semibold capitalize">{account.accountType}</p>
+                        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                          {style.label}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-muted-foreground group-hover:text-primary transition-colors">
-                      <ArrowRight className="h-5 w-5" />
-                    </div>
+                    <Badge tone={account.accountType === "credit" ? "rose" : "mint"}>
+                      {account.currency}
+                    </Badge>
                   </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+
+                  <div>
+                    <p className="label-xs">Available</p>
+                    <p className="num mt-1 text-[26px] font-semibold leading-none">
+                      {formatCurrency(account.balance)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="num text-xs tracking-[0.12em] text-muted-foreground">
+                      ****
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors group-hover:text-mint">
+                      Open
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
+                  </div>
+                </article>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

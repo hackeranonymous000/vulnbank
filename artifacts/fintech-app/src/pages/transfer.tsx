@@ -1,194 +1,229 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { useLocation } from "wouter";
-import { ArrowRightLeft, Loader2, DollarSign } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { ArrowRight, Landmark, Search, Send, Wallet } from "lucide-react";
+import { api, ApiError, formatCurrency } from "@/lib/api";
+import { Badge, Button, EmptyState, Field, inputClass, PageHeader, Panel, Skeleton } from "@/components/app-ui";
+import type { Account } from "@/lib/types";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-
-import { useGetAccounts, useCreateTransfer, getGetAccountsQueryKey, getGetRecentActivityQueryKey, getGetDashboardSummaryQueryKey } from "@workspace/api-client-react";
-import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-
-const transferSchema = z.object({
-  fromAccountId: z.coerce.number().min(1, "Please select an origin account"),
-  toAccountId: z.coerce.number().min(1, "Please select a destination account"),
-  amount: z.coerce.number().positive("Amount must be greater than 0"),
-  description: z.string().optional(),
-}).refine(data => data.fromAccountId !== data.toAccountId, {
-  message: "Origin and destination accounts must be different",
-  path: ["toAccountId"]
-});
-
-type TransferFormValues = z.infer<typeof transferSchema>;
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
+interface TransferResult {
+  success: boolean;
+  transactionId: number;
+  message: string;
+  fromBalance: number;
+  toBalance: number;
 }
 
 export default function Transfer() {
-  const [_, setLocation] = useLocation();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  const { data: accounts, isLoading: isLoadingAccounts } = useGetAccounts();
-  const createTransfer = useCreateTransfer();
+  const [fromAccountId, setFromAccountId] = useState("");
+  const [toAccountId, setToAccountId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [recipient, setRecipient] = useState<Account | null>(null);
 
-  const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<TransferFormValues>({
-    resolver: zodResolver(transferSchema),
-    defaultValues: {
-      fromAccountId: 0,
-      toAccountId: 0,
-      amount: 0,
-      description: "Internal transfer",
+  const accountsQuery = useQuery({
+    queryKey: ["accounts"],
+    queryFn: () => api<Account[]>("/api/accounts"),
+  });
+
+  const accounts = accountsQuery.data ?? [];
+  const source = accounts.find((account) => String(account.id) === fromAccountId);
+
+  const lookup = useMutation({
+    mutationFn: (id: number) => api<Account>(`/api/accounts/${id}`),
+    onSuccess: (account) => {
+      setRecipient(account);
+      toast.success(`Recipient resolved to account #${account.id}`);
+    },
+    onError: (err) => {
+      setRecipient(null);
+      toast.error(err instanceof ApiError ? err.message : "Account not found");
     },
   });
 
-  const fromAccountId = watch("fromAccountId");
-  const toAccountId = watch("toAccountId");
+  const transfer = useMutation({
+    mutationFn: () =>
+      api<TransferResult>("/api/transfers", {
+        method: "POST",
+        body: {
+          fromAccountId: Number(fromAccountId),
+          toAccountId: Number(toAccountId),
+          amount,
+          description: description || undefined,
+        },
+      }),
+    onSuccess: (result) => {
+      toast.success(`Sent — new source balance ${formatCurrency(result.fromBalance)}`);
+      void queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setAmount("");
+      setDescription("");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Transfer failed"),
+  });
 
-  const onSubmit = async (data: TransferFormValues) => {
-    try {
-      const result = await createTransfer.mutateAsync({ data });
-      
-      toast({
-        title: "Transfer successful",
-        description: result.message || "Funds transferred successfully.",
-      });
-
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: getGetAccountsQueryKey() });
-      queryClient.invalidateQueries({ queryKey: getGetRecentActivityQueryKey() });
-      queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-
-      reset();
-      setLocation("/transactions");
-    } catch (err: any) {
-      toast({
-        title: "Transfer failed",
-        description: err.message || "An error occurred processing the transfer.",
-        variant: "destructive",
-      });
-    }
-  };
+  const valid = fromAccountId && toAccountId && Number(amount) > 0;
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Internal Transfer</h2>
-        <p className="text-muted-foreground">Move funds instantly between your accounts.</p>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Payments"
+        title="Move money"
+        description="Internal transfers settle instantly, any time of day."
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ArrowRightLeft className="h-5 w-5 text-primary" />
-            Transfer Funds
-          </CardTitle>
-          <CardDescription>Transfers are processed immediately and cannot be reversed.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form id="transfer-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="fromAccountId">From Account</Label>
-                <Select 
-                  disabled={isLoadingAccounts} 
-                  onValueChange={(val) => setValue("fromAccountId", parseInt(val, 10))}
-                  value={fromAccountId ? fromAccountId.toString() : undefined}
+      <div className="grid gap-4 lg:grid-cols-12">
+        <Panel className="lg:col-span-7" title="Transfer details" description="All amounts are in USD">
+          {accountsQuery.isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : accounts.length === 0 ? (
+            <EmptyState title="No accounts to send from" />
+          ) : (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (valid) transfer.mutate();
+              }}
+            >
+              <Field label="From account" htmlFor="from-account">
+                <select
+                  id="from-account"
+                  className={inputClass}
+                  value={fromAccountId}
+                  onChange={(event) => setFromAccountId(event.target.value)}
                 >
-                  <SelectTrigger className="bg-black/20 h-12">
-                    <SelectValue placeholder={isLoadingAccounts ? "Loading accounts..." : "Select origin account"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts?.map((acc: any) => (
-                      <SelectItem key={acc.id} value={acc.id.toString()}>
-                        {acc.accountType} (••••{acc.accountNumber.slice(-4)}) - {formatCurrency(acc.balance)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.fromAccountId && <p className="text-sm text-destructive">{errors.fromAccountId.message}</p>}
-              </div>
+                  <option value="">Select an account…</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>                                {account.accountType} · ****{String(account.accountNumber).slice(-4)} · {formatCurrency(account.balance)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
 
-              <div className="flex justify-center py-2">
-                <div className="p-2 rounded-full bg-muted">
-                  <ArrowRightLeft className="h-4 w-4 text-muted-foreground rotate-90" />
+              <Field
+                label="Destination account id"
+                htmlFor="to-account"
+                hint="Enter the destination account id."
+              >
+                <div className="flex gap-2">
+                  <input
+                    id="to-account"
+                    className={inputClass}
+                    placeholder="2"
+                    value={toAccountId}
+                    onChange={(event) => {
+                      setToAccountId(event.target.value);
+                      setRecipient(null);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => lookup.mutate(Number(toAccountId) || 0)}
+                    loading={lookup.isPending}
+                    className="shrink-0"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
                 </div>
-              </div>
+              </Field>
 
-              <div className="space-y-2">
-                <Label htmlFor="toAccountId">To Account</Label>
-                <Select 
-                  disabled={isLoadingAccounts} 
-                  onValueChange={(val) => setValue("toAccountId", parseInt(val, 10))}
-                  value={toAccountId ? toAccountId.toString() : undefined}
-                >
-                  <SelectTrigger className="bg-black/20 h-12">
-                    <SelectValue placeholder={isLoadingAccounts ? "Loading accounts..." : "Select destination account"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts?.map((acc: any) => (
-                      <SelectItem key={acc.id} value={acc.id.toString()}>
-                        {acc.accountType} (••••{acc.accountNumber.slice(-4)}) - {formatCurrency(acc.balance)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.toAccountId && <p className="text-sm text-destructive">{errors.toAccountId.message}</p>}
-              </div>
+              {recipient && (
+                <div className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
+                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-mint/10 text-mint">
+                    <Landmark className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="num text-xs">{recipient.accountNumber}</p>
+                    <p className="text-[11px] capitalize text-muted-foreground">
+                      {recipient.accountType} · owner #{recipient.userId}
+                    </p>
+                  </div>
+                  <span className="num text-xs">{formatCurrency(recipient.balance)}</span>
+                </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="amount">Amount (USD)</Label>
+              <Field label="Amount" htmlFor="amount">
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
+                  <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    $
+                  </span>
+                  <input
                     id="amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    placeholder="0.00"
-                    className="pl-9 h-12 bg-black/20 text-lg font-mono"
-                    {...register("amount")}
+                    className={`${inputClass} pl-7`}
+                    placeholder="250.00"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    inputMode="decimal"
                   />
                 </div>
-                {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
-              </div>
+              </Field>
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (Optional)</Label>
-                <Textarea
+              <Field label="Description" htmlFor="description" hint="Shown on both statements.">
+                <input
                   id="description"
-                  placeholder="What is this transfer for?"
-                  className="bg-black/20 resize-none"
-                  {...register("description")}
+                  className={inputClass}
+                  placeholder="Rent, split dinner, …"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
                 />
-                {errors.description && <p className="text-sm text-destructive">{errors.description.message}</p>}
+              </Field>
+
+              <Button type="submit" size="lg" loading={transfer.isPending} disabled={!valid} className="w-full">
+                <Send className="h-4 w-4" />
+                Send {amount ? formatCurrency(Number(amount) || 0) : "money"}
+              </Button>
+            </form>
+          )}
+        </Panel>
+
+        <div className="space-y-4 lg:col-span-5">
+          <Panel title="Preview" description="What the API will do">
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">From</span>
+                <span className="num text-xs">
+                  {source ? `${source.accountType} · ${source.accountNumber}` : "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Available</span>
+                <span className="num text-xs">{formatCurrency(source?.balance ?? 0)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">After transfer</span>
+                <span className="num text-xs text-mint">
+                  {formatCurrency((source?.balance ?? 0) - (Number(amount) || 0))}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
+                <span className="text-xs text-muted-foreground">Destination</span>
+                <span className="num text-xs">
+                  {recipient ? recipient.accountNumber : toAccountId ? `#${toAccountId}` : "—"}
+                </span>
               </div>
             </div>
-          </form>
-        </CardContent>
-        <CardFooter className="bg-muted/50 py-4 border-t border-border">
-          <Button 
-            type="submit" 
-            form="transfer-form"
-            className="w-full h-12 text-md font-medium" 
-            disabled={createTransfer.isPending || isLoadingAccounts}
-          >
-            {createTransfer.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-            Execute Transfer
-          </Button>
-        </CardFooter>
-      </Card>
+
+            <div className="mt-4 flex items-center justify-center gap-3 rounded-xl border border-white/[0.06] bg-black/20 py-3">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-mint/10 text-mint">
+                <Wallet className="h-4 w-4" />
+              </span>
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-violet/10 text-violet">
+                <Landmark className="h-4 w-4" />
+              </span>
+            </div>
+          </Panel>
+
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,259 +1,277 @@
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { User, Mail, Phone, MapPin, Loader2, AlertTriangle, Key } from "lucide-react";
-import { useEffect } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-
+import { toast } from "sonner";
+import {
+  BadgeCheck,
+  Camera,
+  Eye,
+  EyeOff,
+  Fingerprint,
+  KeyRound,
+  Loader2,
+  ShieldCheck,
+} from "lucide-react";
+import { api, ApiError, formatDate, initials } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
-import { useGetUser, useGetMe, useUpdateUser, getGetUserQueryKey } from "@workspace/api-client-react";
-import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-
-const profileSchema = z.object({
-  fullName: z.string().min(1, "Full name is required"),
-  email: z.string().email("Invalid email address"),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-});
-
-type ProfileFormValues = z.infer<typeof profileSchema>;
+import {
+  Badge,
+  Button,
+  CopyButton,
+  Field,
+  inputClass,
+  PageHeader,
+  Panel,
+  Skeleton,
+} from "@/components/app-ui";
+import type { User } from "@/lib/types";
 
 export default function Profile() {
-  const { userId } = useParams();
-  const { user: currentUser } = useAuth();
-  const { toast } = useToast();
+  const params = useParams<{ userId?: string }>();
+  const { user, setUser } = useAuth();
   const queryClient = useQueryClient();
 
-  // If userId param exists, fetch that user (IDOR vulnerability)
-  // Otherwise, fetch current user
-  const isEditingOtherUser = !!userId && userId !== currentUser?.id.toString();
-  const targetId = userId ? parseInt(userId, 10) : currentUser?.id || 0;
-  
-  const { data: profileUser, isLoading } = useGetUser(targetId, {
-    query: { enabled: !!targetId }
+  const targetId = params.userId ? Number(params.userId) : user?.id ?? 0;
+  const isSelf = targetId === user?.id;
+
+  const [revealSecrets, setRevealSecrets] = useState(false);
+  const [form, setForm] = useState({ fullName: "", email: "", phone: "", address: "" });
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const profileQuery = useQuery({
+    queryKey: ["user", targetId],
+    queryFn: () => api<User>(`/api/users/${targetId}`),
+    enabled: targetId > 0,
   });
 
-  const updateUser = useUpdateUser();
+  const profile = profileQuery.data;
 
-  const { register, handleSubmit, formState: { errors, isDirty }, reset } = useForm<ProfileFormValues>({
-    resolver: zodResolver(profileSchema),
-    defaultValues: {
-      fullName: "",
-      email: "",
-      phone: "",
-      address: "",
-    },
-  });
-
-  // Update form when user data loads
   useEffect(() => {
-    if (profileUser) {
-      reset({
-        fullName: profileUser.fullName || "",
-        email: profileUser.email || "",
-        phone: (profileUser as any).phone || "",
-        address: (profileUser as any).address || "",
-      });
-    }
-  }, [profileUser, reset]);
+    if (!profile) return;
+    setForm({
+      fullName: profile.fullName ?? "",
+      email: profile.email ?? "",
+      phone: profile.phone ?? "",
+      address: profile.address ?? "",
+    });
+  }, [profile]);
 
-  const onSubmit = async (data: ProfileFormValues) => {
-    try {
-      await updateUser.mutateAsync({ 
-        userId: targetId, 
-        data 
-      });
-      
-      toast({
-        title: "Profile updated",
-        description: "User information saved successfully.",
-      });
+  const save = useMutation({
+    mutationFn: () => api<User>(`/api/users/${targetId}`, { method: "PUT", body: form }),
+    onSuccess: (updated) => {
+      toast.success("Profile updated");
+      void queryClient.invalidateQueries({ queryKey: ["user", targetId] });
+      if (isSelf) setUser({ ...(user as User), ...updated });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Update failed"),
+  });
 
-      queryClient.invalidateQueries({ queryKey: getGetUserQueryKey(targetId) });
-      
-      // If we edited ourselves, we might want to update the me query too
-      if (!isEditingOtherUser) {
-        // Just invalidate, layout component will refetch if needed
-      }
-    } catch (err: any) {
-      toast({
-        title: "Update failed",
-        description: err.message || "An error occurred while updating the profile.",
-        variant: "destructive",
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
       });
-    }
-  };
+      return api<{ filename: string }>("/api/profile/avatar", {
+        method: "POST",
+        body: { filename: file.name, content },
+      });
+    },
+    onSuccess: ({ filename }) => {
+      setAvatarUrl(`/api/uploads/${encodeURIComponent(filename)}?t=${Date.now()}`);
+      toast.success("Photo updated");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Upload failed"),
+  });
+
+  const update = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [key]: event.target.value }));
+
+  const memberSince = profile?.createdAt
+    ? formatDate(profile.createdAt)
+    : "—";
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">User Profile</h2>
-        <p className="text-muted-foreground">Manage personal information and settings.</p>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow={isSelf ? "Your account" : "Customer profile"}
+        title={profile?.fullName || "Profile"}
+        description="Contact details, account preferences and API access."
+        actions={
+          <Badge tone={profile?.role === "admin" ? "violet" : "mint"}>
+            <BadgeCheck className="h-3 w-3" />
+            {profile?.role ?? "customer"}
+          </Badge>
+        }
+      />
 
-      {isEditingOtherUser && (
-        <Alert variant="destructive" className="bg-destructive/10 text-destructive border-destructive/20">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Access Warning</AlertTitle>
-          <AlertDescription>
-            You are viewing profile ID {userId}. This might not be your account.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-1">
-          <CardContent className="pt-6 flex flex-col items-center text-center">
-            {isLoading ? (
-              <Skeleton className="h-24 w-24 rounded-full mb-4" />
+      <div className="grid gap-4 lg:grid-cols-12">
+        <div className="space-y-4 lg:col-span-4">
+          <Panel bodyClassName="p-6">
+            {profileQuery.isLoading ? (
+              <Skeleton className="h-40 w-full" />
             ) : (
-              <div className="h-24 w-24 rounded-full bg-primary/20 flex items-center justify-center text-primary mb-4 border-2 border-primary/50">
-                <User className="h-10 w-10" />
-              </div>
-            )}
-            
-            {isLoading ? (
-              <div className="space-y-2 w-full flex flex-col items-center">
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="h-5 w-16 mt-2" />
-              </div>
-            ) : (
-              <>
-                <h3 className="text-xl font-bold">{profileUser?.fullName}</h3>
-                <p className="text-sm text-muted-foreground font-mono">@{profileUser?.username}</p>
-                <div className="mt-4 flex gap-2">
-                  <Badge variant={profileUser?.role === 'admin' ? 'destructive' : 'default'} className="uppercase">
-                    {profileUser?.role}
-                  </Badge>
-                  <Badge variant="outline" className="font-mono">ID: {profileUser?.id}</Badge>
+              <div className="flex flex-col items-center text-center">
+                <div className="relative">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt="Profile photo"
+                      className="h-20 w-20 rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <span className="grid h-20 w-20 place-items-center rounded-2xl bg-gradient-to-br from-violet/80 via-mint/70 to-emerald-500 text-2xl font-bold text-[#07110e]">
+                      {initials(profile?.fullName)}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="absolute -bottom-2 -right-2 grid h-8 w-8 place-items-center rounded-xl border border-white/10 bg-[#0c1017] text-muted-foreground transition-colors hover:border-mint/40 hover:text-mint"
+                    aria-label="Upload photo"
+                  >
+                    {upload.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Camera className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) upload.mutate(file);
+                      event.target.value = "";
+                    }}
+                  />
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
 
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Personal Information</CardTitle>
-            <CardDescription>Update your contact details here.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="space-y-2">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <form id="profile-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">Full Name</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="fullName"
-                        className="pl-9 bg-black/20"
-                        {...register("fullName")}
-                      />
-                    </div>
-                    {errors.fullName && <p className="text-sm text-destructive">{errors.fullName.message}</p>}
-                  </div>
+                <h3 className="mt-4 text-lg font-semibold tracking-tight">
+                  {profile?.fullName || "—"}
+                </h3>
+                <p className="text-xs text-muted-foreground">@{profile?.username ?? "member"}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground/70">
+                  Member since {memberSince}
+                </p>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email Address</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="email"
-                        type="email"
-                        className="pl-9 bg-black/20"
-                        {...register("email")}
-                      />
-                    </div>
-                    {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+                <div className="mt-5 w-full space-y-2 text-left">
+                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] px-3 py-2">
+                    <span className="text-[11px] text-muted-foreground">Customer id</span>
+                    <span className="num text-xs">{profile?.id ?? "—"}</span>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="phone"
-                        placeholder="+1 (555) 000-0000"
-                        className="pl-9 bg-black/20"
-                        {...register("phone")}
-                      />
-                    </div>
+                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] px-3 py-2">
+                    <span className="text-[11px] text-muted-foreground">Email</span>
+                    <span className="truncate text-xs">{profile?.email ?? "—"}</span>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="address">Mailing Address</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="address"
-                        placeholder="123 Bank St, Financial District"
-                        className="pl-9 bg-black/20"
-                        {...register("address")}
-                      />
-                    </div>
+                  <div className="flex items-center justify-between rounded-xl bg-white/[0.03] px-3 py-2">
+                    <span className="text-[11px] text-muted-foreground">Phone</span>
+                    <span className="text-xs">{profile?.phone || "—"}</span>
                   </div>
                 </div>
-              </form>
+              </div>
             )}
-          </CardContent>
-          <CardFooter className="bg-muted/50 py-4 border-t border-border flex justify-end">
-            <Button 
-              type="submit" 
-              form="profile-form"
-              disabled={isLoading || updateUser.isPending || (!isDirty && !isEditingOtherUser)}
+          </Panel>
+
+          <Panel title="Security" description="Session and access settings for this profile.">
+            <div className="space-y-2 text-[11px] text-muted-foreground">
+              <p className="flex items-center gap-2">
+                <ShieldCheck className="h-3.5 w-3.5 text-mint" />
+                Session active on this device
+              </p>
+              <p className="flex items-center gap-2">
+                <Fingerprint className="h-3.5 w-3.5 text-mint" />
+                Two-factor authentication available
+              </p>
+            </div>
+          </Panel>
+        </div>
+
+        <div className="space-y-4 lg:col-span-8">
+          <Panel title="Personal details" description="Update your contact information.">
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                save.mutate();
+              }}
             >
-              {updateUser.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Save Changes
-            </Button>
-          </CardFooter>
-        </Card>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Full name" htmlFor="profile-name">
+                  <input id="profile-name" className={inputClass} value={form.fullName} onChange={update("fullName")} />
+                </Field>
+                <Field label="Email" htmlFor="profile-email">
+                  <input id="profile-email" type="email" className={inputClass} value={form.email} onChange={update("email")} />
+                </Field>
+                <Field label="Phone" htmlFor="profile-phone">
+                  <input id="profile-phone" className={inputClass} value={form.phone} onChange={update("phone")} />
+                </Field>
+                <Field label="Address" htmlFor="profile-address">
+                  <input id="profile-address" className={inputClass} value={form.address} onChange={update("address")} />
+                </Field>
+              </div>
 
-        {/* Password section placeholder (not functional but looks real) */}
-        <Card className="md:col-span-3 mt-6">
-          <CardHeader>
-            <CardTitle className="text-destructive flex items-center gap-2">
-              <Key className="h-5 w-5" /> Security
-            </CardTitle>
-            <CardDescription>Update your password and security settings.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 opacity-50 pointer-events-none">
-            <div className="space-y-2">
-              <Label>Current Password</Label>
-              <Input type="password" value="********" readOnly className="bg-black/20" />
+              <Button type="submit" loading={save.isPending}>
+                Save changes
+              </Button>
+            </form>
+          </Panel>
+
+          <Panel
+            title="Account identifiers"
+            description="Tax and API credentials attached to this profile."
+            action={
+              <Button size="sm" variant="ghost" onClick={() => setRevealSecrets((v) => !v)}>
+                {revealSecrets ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {revealSecrets ? "Hide" : "Reveal"}
+              </Button>
+            }
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SecretRow
+                icon={<Fingerprint className="h-3.5 w-3.5" />}
+                label="SSN"
+                value={revealSecrets ? profile?.ssn ?? "—" : "•••-••-••••"}
+              />
+              <SecretRow
+                icon={<KeyRound className="h-3.5 w-3.5" />}
+                label="API key"
+                value={revealSecrets ? profile?.apiKey ?? "—" : "vbk_live_••••••••••••"}
+              />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>New Password</Label>
-                <Input type="password" value="********" readOnly className="bg-black/20" />
-              </div>
-              <div className="space-y-2">
-                <Label>Confirm Password</Label>
-                <Input type="password" value="********" readOnly className="bg-black/20" />
-              </div>
-            </div>
-            <Button variant="destructive" disabled>Update Password</Button>
-          </CardContent>
-        </Card>
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              API keys are long-lived. Rotate them from the dashboard when needed.
+            </p>
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SecretRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-black/25 p-3">
+      <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        {icon}
+        {label}
+      </p>
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <span className="num truncate text-xs">{value}</span>
+        <CopyButton value={value} label="" />
       </div>
     </div>
   );

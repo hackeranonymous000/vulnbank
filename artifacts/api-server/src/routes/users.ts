@@ -1,81 +1,78 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { query, queryOne, run, type UserRow } from "@workspace/db";
+import { publicUser, sensitiveUser } from "../lib/serialize";
 import { requireAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-router.get("/users/me", requireAuth, async (req, res): Promise<void> => {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!));
+router.get("/me", requireAuth, async (req, res): Promise<void> => {
+  const user = queryOne<UserRow>("SELECT * FROM users WHERE id = ?", [req.userId!]);
   if (!user) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  res.json({
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    fullName: user.fullName,
-    role: user.role,
-    phone: user.phone,
-    address: user.address,
-    createdAt: user.createdAt,
-  });
+  res.json(sensitiveUser(user));
 });
 
-router.get("/users/:userId", requireAuth, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
-  const userId = parseInt(raw, 10);
+router.get("/", requireAuth, async (_req, res): Promise<void> => {
+  const rows = query<UserRow>("SELECT * FROM users ORDER BY id");
+  res.json({ users: rows.map(publicUser) });
+});
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+router.get("/:id", requireAuth, async (req, res): Promise<void> => {
+  const user = queryOne<UserRow>("SELECT * FROM users WHERE id = ?", [Number(req.params.id)]);
   if (!user) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-
-  res.json({
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    fullName: user.fullName,
-    role: user.role,
-    phone: user.phone,
-    address: user.address,
-    createdAt: user.createdAt,
-  });
+  res.json(sensitiveUser(user));
 });
 
-// CVE: Mass Assignment — allows setting role, passwordHash, and any other field
-// No filtering of dangerous fields from req.body
-router.put("/users/:userId", requireAuth, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
-  const userId = parseInt(raw, 10);
+router.put("/:id", requireAuth, async (req, res): Promise<void> => {
+  const userId = Number(req.params.id);
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const updates: string[] = [];
+  const values: (string | number)[] = [];
 
-  const { email, fullName, phone, address, role } = req.body;
-  const updateData: Record<string, string> = {};
-  if (email) updateData.email = email;
-  if (fullName) updateData.fullName = fullName;
-  if (phone !== undefined) updateData.phone = phone;
-  if (address !== undefined) updateData.address = address;
-  // CVE: Mass Assignment — role should never be user-settable, but it is here
-  if (role !== undefined) updateData.role = role;
+  if (body.username !== undefined) {
+    updates.push("username = ?");
+    values.push(String(body.username));
+  }
+  if (body.email !== undefined) {
+    updates.push("email = ?");
+    values.push(String(body.email));
+  }
+  if (body.fullName !== undefined) {
+    updates.push("full_name = ?");
+    values.push(String(body.fullName));
+  }
+  if (body.role !== undefined) {
+    updates.push("role = ?");
+    values.push(String(body.role));
+  }
+  if (body.phone !== undefined) {
+    updates.push("phone = ?");
+    values.push(String(body.phone));
+  }
+  if (body.address !== undefined) {
+    updates.push("address = ?");
+    values.push(String(body.address));
+  }
 
-  const [updated] = await db.update(usersTable).set(updateData).where(eq(usersTable.id, userId)).returning();
-  if (!updated) {
-    res.status(404).json({ error: "User not found" });
+  if (updates.length === 0) {
+    res.status(400).json({ error: "No fields to update" });
     return;
   }
 
-  res.json({
-    id: updated.id,
-    username: updated.username,
-    email: updated.email,
-    fullName: updated.fullName,
-    role: updated.role,
-    phone: updated.phone,
-    address: updated.address,
-    createdAt: updated.createdAt,
-  });
+  values.push(userId);
+  run(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, values);
+
+  const user = queryOne<UserRow>("SELECT * FROM users WHERE id = ?", [userId]);
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json(publicUser(user));
 });
 
 export default router;

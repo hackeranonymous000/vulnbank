@@ -1,67 +1,81 @@
 import { Router, type IRouter } from "express";
-import { db, accountsTable, transactionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { queryOne, run } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
+import { accountRow } from "../lib/serialize";
 
 const router: IRouter = Router();
 
-router.post("/transfers", requireAuth, async (req, res): Promise<void> => {
-  const { fromAccountId, toAccountId, amount, description } = req.body;
-  if (!fromAccountId || !toAccountId || !amount) {
-    res.status(400).json({ error: "Missing required fields" });
+router.post("/", requireAuth, async (req, res): Promise<void> => {
+  const { fromAccountId, toAccountId, description } = (req.body ?? {}) as {
+    fromAccountId?: unknown;
+    toAccountId?: unknown;
+    amount?: unknown;
+    description?: unknown;
+  };
+  const rawAmount = (req.body ?? {}).amount;
+
+  if (fromAccountId == null || toAccountId == null || rawAmount == null) {
+    res.status(400).json({ error: "fromAccountId, toAccountId and amount are required" });
     return;
   }
 
-  const transferAmount = parseFloat(amount);
-  if (isNaN(transferAmount) || transferAmount <= 0) {
-    res.status(400).json({ error: "Invalid amount" });
+  const fromId = Number(fromAccountId);
+  const toId = Number(toAccountId);
+  const amount = Number.parseFloat(String(rawAmount));
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ error: "amount must be a positive number" });
+    return;
+  }
+  if (fromId === toId) {
+    res.status(400).json({ error: "Choose two different accounts" });
     return;
   }
 
-  const [fromAccount] = await db.select().from(accountsTable).where(eq(accountsTable.id, fromAccountId));
-  if (!fromAccount) {
-    res.status(404).json({ error: "Source account not found" });
+  const fromAccount = queryOne(`SELECT * FROM accounts WHERE id = ?`, [fromId]);
+  const toAccount = queryOne(`SELECT * FROM accounts WHERE id = ?`, [toId]);
+  if (!fromAccount || !toAccount) {
+    res.status(404).json({ error: "Account not found" });
     return;
   }
 
-  const fromBalance = parseFloat(fromAccount.balance as unknown as string);
-  if (fromBalance < transferAmount) {
+  const fromBalanceBefore = Number(fromAccount.balance);
+  if (fromBalanceBefore < amount) {
     res.status(400).json({ error: "Insufficient funds" });
     return;
   }
 
-  const [toAccount] = await db.select().from(accountsTable).where(eq(accountsTable.id, toAccountId));
-  if (!toAccount) {
-    res.status(404).json({ error: "Destination account not found" });
-    return;
-  }
+  const fromBalance = Math.round((fromBalanceBefore - amount) * 100) / 100;
+  const toBalance = Math.round((Number(toAccount.balance) + amount) * 100) / 100;
+  const label = String(description ?? "").trim() || "Internal transfer";
+  const now = new Date().toISOString();
 
-  const toBalance = parseFloat(toAccount.balance as unknown as string);
-  const newFromBalance = fromBalance - transferAmount;
-  const newToBalance = toBalance + transferAmount;
+  run("UPDATE accounts SET balance = ? WHERE id = ?", [fromBalance, fromId]);
+  run("UPDATE accounts SET balance = ? WHERE id = ?", [toBalance, toId]);
 
-  await db.update(accountsTable).set({ balance: String(newFromBalance) }).where(eq(accountsTable.id, fromAccountId));
-  await db.update(accountsTable).set({ balance: String(newToBalance) }).where(eq(accountsTable.id, toAccountId));
+  run(
+    `INSERT INTO transactions (account_id, type, amount, description, category, balance_after, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [fromId, "debit", amount, label, "transfer", fromBalance, now],
+  );
+  run(
+    `INSERT INTO transactions (account_id, type, amount, description, category, balance_after, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [toId, "credit", amount, label, "transfer", toBalance, now],
+  );
 
-  const [txn] = await db.insert(transactionsTable).values({
-    accountId: fromAccountId,
-    type: "transfer",
-    amount: String(transferAmount),
-    description: description || `Transfer to account #${toAccountId}`,
-    category: "transfer",
-    balanceAfter: String(newFromBalance),
-  }).returning();
+  run(
+    `INSERT INTO audit_logs (action, details, user_id, ip_address, created_at) VALUES (?, ?, ?, ?, ?)`,
+    ["TRANSFER_CREATED", `${fromId} → ${toId} $${amount}`, req.userId ?? null, req.ip ?? null, now],
+  );
 
-  await db.insert(transactionsTable).values({
-    accountId: toAccountId,
-    type: "credit",
-    amount: String(transferAmount),
-    description: description || `Transfer from account #${fromAccountId}`,
-    category: "transfer",
-    balanceAfter: String(newToBalance),
+  res.json({
+    fromAccount: accountRow(fromAccount),
+    toAccount: accountRow(toAccount),
+    amount,
+    fromBalance,
+    toBalance,
   });
-
-  res.json({ success: true, transactionId: txn.id, message: "Transfer successful" });
 });
 
 export default router;

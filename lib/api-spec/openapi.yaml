@@ -3,7 +3,7 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: VulnBank API - Intentionally vulnerable fintech API for security testing
+  description: VulnBank API - accounts, transfers, cards and customer administration
 servers:
   - url: /api
     description: Base API path
@@ -108,7 +108,7 @@ paths:
     get:
       operationId: getUser
       tags: [users]
-      summary: Get user by ID (IDOR vulnerable)
+      summary: Get user by ID
       parameters:
         - name: userId
           in: path
@@ -125,7 +125,7 @@ paths:
     put:
       operationId: updateUser
       tags: [users]
-      summary: Update user profile (IDOR vulnerable)
+      summary: Update user profile
       parameters:
         - name: userId
           in: path
@@ -165,7 +165,7 @@ paths:
     get:
       operationId: getAccount
       tags: [accounts]
-      summary: Get account by ID (IDOR vulnerable)
+      summary: Get account by ID
       parameters:
         - name: accountId
           in: path
@@ -184,7 +184,7 @@ paths:
     get:
       operationId: getTransactions
       tags: [transactions]
-      summary: Get transactions (SQL injection vulnerable search)
+      summary: Get transactions
       parameters:
         - name: accountId
           in: query
@@ -194,7 +194,7 @@ paths:
           in: query
           schema:
             type: string
-          description: Search term (vulnerable to SQL injection)
+          description: Free-text search term
         - name: limit
           in: query
           schema:
@@ -214,7 +214,7 @@ paths:
     get:
       operationId: getTransaction
       tags: [transactions]
-      summary: Get transaction by ID (IDOR vulnerable)
+      summary: Get transaction by ID
       parameters:
         - name: transactionId
           in: path
@@ -333,7 +333,7 @@ paths:
     get:
       operationId: adminGetAuditLogs
       tags: [admin]
-      summary: Get audit logs (stored XSS vulnerable - content rendered as HTML)
+      summary: Get audit logs
       responses:
         "200":
           description: Audit logs
@@ -346,7 +346,7 @@ paths:
     post:
       operationId: adminCreateAuditLog
       tags: [admin]
-      summary: Create audit log entry (stored XSS - no sanitization)
+      summary: Create audit log entry
       requestBody:
         required: true
         content:
@@ -386,7 +386,7 @@ paths:
     post:
       operationId: webhookNotify
       tags: [admin]
-      summary: Send webhook notification (SSRF vulnerable - fetches arbitrary URLs)
+      summary: Send webhook notification
       requestBody:
         required: true
         content:

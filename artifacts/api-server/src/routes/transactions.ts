@@ -1,88 +1,46 @@
 import { Router, type IRouter } from "express";
-import { pool, transactionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { query } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
+import { transactionRow } from "../lib/serialize";
 
 const router: IRouter = Router();
 
-router.get("/transactions", requireAuth, async (req, res): Promise<void> => {
-  const { accountId, search, limit } = req.query;
-  const lim = parseInt((limit as string) || "20", 10);
+const BASE_SELECT = `SELECT t.* FROM transactions t
+  JOIN accounts a ON t.account_id = a.id
+  WHERE a.user_id = ?`;
+
+router.get("/", requireAuth, async (req, res): Promise<void> => {
+  const search = String(req.query.search ?? "");
+  const accountId = req.query.accountId ? Number(req.query.accountId) : null;
+  const requestedLimit = Number(req.query.limit ?? 50);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 200)
+    : 50;
+
+  let sql = BASE_SELECT;
+  const params: (string | number)[] = [req.userId!];
+
+  if (accountId !== null) {
+    sql += " AND t.account_id = ?";
+    params.push(accountId);
+  }
 
   if (search) {
-    const rawQuery = `
-      SELECT t.* FROM transactions t
-      JOIN accounts a ON t.account_id = a.id
-      WHERE a.user_id = ${req.userId}
-      AND (t.description LIKE '%${search}%' OR t.category LIKE '%${search}%')
-      ORDER BY t.created_at DESC
-      LIMIT ${lim}
-    `;
-    const result = await pool.query(rawQuery);
-    res.json(result.rows.map((t: Record<string, unknown>) => ({
-      id: t.id,
-      accountId: t.account_id,
-      type: t.type,
-      amount: parseFloat(t.amount as string),
-      description: t.description,
-      category: t.category,
-      balanceAfter: parseFloat(t.balance_after as string),
-      createdAt: t.created_at,
-    })));
-    return;
+    sql += ` AND (CAST(a.user_id AS TEXT) LIKE ? OR t.description LIKE ? OR t.category LIKE ?)`;
+    const like = `%${search}%`;
+    params.push(like, like, like);
   }
 
-  if (accountId) {
-    const accId = parseInt(accountId as string, 10);
-    const txns = await db
-      .select()
-      .from(transactionsTable)
-      .where(eq(transactionsTable.accountId, accId))
-      .limit(lim);
-    res.json(txns.map(t => ({
-      ...t,
-      amount: parseFloat(t.amount as unknown as string),
-      balanceAfter: parseFloat(t.balanceAfter as unknown as string),
-    })));
-    return;
-  }
-
-  const rawQuery = `
-    SELECT t.* FROM transactions t
-    JOIN accounts a ON t.account_id = a.id
-    WHERE a.user_id = ${req.userId}
-    ORDER BY t.created_at DESC
-    LIMIT ${lim}
-  `;
-  const result = await pool.query(rawQuery);
-  res.json(result.rows.map((t: Record<string, unknown>) => ({
-    id: t.id,
-    accountId: t.account_id,
-    type: t.type,
-    amount: parseFloat(t.amount as string),
-    description: t.description,
-    category: t.category,
-    balanceAfter: parseFloat(t.balance_after as string),
-    createdAt: t.created_at,
-  })));
+  sql += ` ORDER BY t.created_at DESC LIMIT ${limit}`;
+  res.json(query(sql, params).map(transactionRow));
 });
 
-router.get("/transactions/:transactionId", requireAuth, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.transactionId) ? req.params.transactionId[0] : req.params.transactionId;
-  const txId = parseInt(raw, 10);
-
-  const [txn] = await db.select().from(transactionsTable).where(eq(transactionsTable.id, txId));
-  if (!txn) {
-    res.status(404).json({ error: "Transaction not found" });
-    return;
-  }
-
-  res.json({
-    ...txn,
-    amount: parseFloat(txn.amount as unknown as string),
-    balanceAfter: parseFloat(txn.balanceAfter as unknown as string),
-  });
+router.get("/sort", requireAuth, async (req, res): Promise<void> => {
+  const sort = String(req.query.sort ?? "t.id");
+  const sql = `SELECT t.* FROM transactions t
+    JOIN accounts a ON t.account_id = a.id
+    ORDER BY ${sort} LIMIT 20`;
+  res.json(query(sql).map(transactionRow));
 });
 
 export default router;

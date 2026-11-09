@@ -1,13 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
 import { verifyToken } from "../lib/auth";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { queryOne, type UserRow } from "@workspace/db";
 
 declare global {
   namespace Express {
     interface Request {
       userId?: number;
       userRole?: string;
+      user?: UserRow;
     }
   }
 }
@@ -26,7 +26,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, decoded.userId));
+  const user = queryOne<UserRow>("SELECT * FROM users WHERE id = ?", [decoded.userId]);
   if (!user) {
     res.status(401).json({ error: "User not found" });
     return;
@@ -34,5 +34,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   req.userId = user.id;
   req.userRole = user.role;
+  req.user = user;
+  next();
+}
+
+export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (req.userRole !== "admin") {
+    res.status(403).json({ error: "Admin only" });
+    return;
+  }
   next();
 }
